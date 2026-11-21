@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f5d3a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>فطار الشركة</title>
+<link rel="manifest" href="manifest.json">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f3f5ee;--ink:#17261d;--mute:#5d6b62;--line:#d8dfd2;--green:#1f5d3a;--gold:#e0a030;--surf:#fff;--red:#b8402a}
+@media (prefers-color-scheme:dark){:root{--bg:#121a15;--ink:#eaf0e6;--mute:#9bab9f;--line:#2b3a30;--green:#5fb583;--gold:#e8b04a;--surf:#1a251e;--red:#e57a63}}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%}
+body{font-family:Tajawal,Tahoma,sans-serif;background:var(--bg);color:var(--ink);padding-top:env(safe-area-inset-top,0px);font-size:17px;line-height:1.5}
+main{max-width:560px;margin:0 auto;padding:16px 16px 150px}
+header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+h1{font-size:28px;font-weight:800}
+.date{color:var(--mute);font-size:15px}
+h2{font-size:19px;font-weight:700;margin:24px 0 4px;padding-bottom:6px;border-bottom:2px solid var(--green)}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.row b{font-weight:500}
+.step{display:flex;align-items:center;gap:10px}
+.step button{width:38px;height:38px;border-radius:50%;border:1.5px solid var(--green);background:none;color:var(--green);font-size:22px;font-family:inherit;cursor:pointer}
+.step button.on{background:var(--green);color:#fff}
+.step span{min-width:20px;text-align:center;font-weight:700}
+input,textarea,select{font:inherit;width:100%;padding:12px;border:1.5px solid var(--line);border-radius:10px;background:var(--surf);color:var(--ink)}
+input:focus,textarea:focus,select:focus,button:focus-visible{outline:3px solid var(--gold);outline-offset:1px}
+.btn{display:block;width:100%;padding:14px;border:0;border-radius:12px;background:var(--green);color:#fff;font:700 18px Tajawal,sans-serif;cursor:pointer}
+.btn.alt{background:none;color:var(--green);border:1.5px solid var(--green)}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.bar{position:fixed;inset:auto 0 0 0;background:var(--surf);border-top:1px solid var(--line);padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px))}
+.bar>div{max-width:560px;margin:0 auto}
+.tabs{display:flex;gap:8px;margin-bottom:8px}
+.tabs button{flex:1;padding:8px;border:0;background:none;font:600 16px Tajawal,sans-serif;color:var(--mute);border-bottom:3px solid transparent;cursor:pointer}
+.tabs button.on{color:var(--green);border-color:var(--gold)}
+.total{font-weight:800;font-size:18px;margin-bottom:8px}
+.note{color:var(--mute);font-size:14px;margin:8px 0}
+.msg{background:var(--surf);border-inline-start:4px solid var(--gold);padding:12px;border-radius:8px;margin:12px 0}
+.msg.err{border-color:var(--red)}
+.who{padding:12px 0;border-bottom:1px solid var(--line)}
+.sum{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed var(--line)}
+.add{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}
+.add input{grid-column:1/3}
+.x{background:none;border:0;color:var(--red);font-size:15px;cursor:pointer;font-family:inherit}
+.gap{height:10px}
+</style>
+</head>
+<body>
+<main id="app"></main>
+<div class="bar" id="bar"></div>
+
+<script>
+/* ===== الإعدادات ===== */
+const CFG = {
+  adminPass: "1234",     // غيّر كلمة سر المسؤول
+  firebase: null         // الصق هنا إعدادات Firebase، مثال: {apiKey:"...",authDomain:"...",projectId:"..."}
+};
+const DEFAULT_MENU = [
+  {id:"s1",name:"سندوتش فول",sec:"sand"},
+  {id:"s2",name:"سندوتش طعمية",sec:"sand"},
+  {id:"s3",name:"سندوتش جبنة",sec:"sand"},
+  {id:"s4",name:"سندوتش بيض",sec:"sand"},
+  {id:"l1",name:"طبق فول",sec:"loose"},
+  {id:"l2",name:"طبق طعمية",sec:"loose"},
+  {id:"l3",name:"بيض مسلوق",sec:"loose"},
+  {id:"l4",name:"جبنة قريش",sec:"loose"}
+];
+const SEC = {sand:"🥪 سندوتشات", loose:"🍲 أكل سايب"};
+
+/* ===== أدوات ===== */
+const $ = s => document.querySelector(s);
+const esc = t => String(t).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const DAY = (() => { const d = new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); })();
+const ls = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+};
+
+/* ===== البيانات: تجريبي (على نفس الموبايل) أو Firebase ===== */
+let store;
+if (CFG.firebase) {
+  const db = (firebase.initializeApp(CFG.firebase), firebase.firestore());
+  store = {
+    demo:false,
+    onMenu: cb => db.collection("app").doc("menu").onSnapshot(s => cb(s.exists ? s.data().items : DEFAULT_MENU)),
+    saveMenu: items => db.collection("app").doc("menu").set({items}),
+    onOrders: cb => db.collection("orders").where("day","==",DAY).onSnapshot(s => cb(s.docs.map(d => d.data()))),
+    saveOrder: o => db.collection("orders").doc(DAY+"_"+o.name).set(o),
+    delOrder: name => db.collection("orders").doc(DAY+"_"+name).delete(),
+    onClosed: cb => db.collection("app").doc("closed_"+DAY).onSnapshot(s => cb(s.exists && s.data().v)),
+    setClosed: v => db.collection("app").doc("closed_"+DAY).set({v})
+  };
+} else {
+  const subs = [];
+  const read = () => ls.get("fatar2", {menu:DEFAULT_MENU, orders:{}, closed:{}});
+  const push = () => subs.forEach(f => f());
+  addEventListener("storage", push);
+  const sub = f => { subs.push(f); f(); };
+  store = {
+    demo:true,
+    onMenu: cb => sub(() => cb(read().menu)),
+    saveMenu: items => { const s = read(); s.menu = items; ls.set("fatar2", s); push(); },
+    onOrders: cb => sub(() => cb(Object.values(read().orders[DAY] || {}))),
+    saveOrder: o => { const s = read(); (s.orders[DAY] = s.orders[DAY] || {})[o.name] = o; ls.set("fatar2", s); push(); },
+    delOrder: name => { const s = read(); if (s.orders[DAY]) delete s.orders[DAY][name]; ls.set("fatar2", s); push(); },
+    onClosed: cb => sub(() => cb(!!read().closed[DAY])),
+    setClosed: v => { const s = read(); s.closed[DAY] = v; ls.set("fatar2", s); push(); }
+  };
+}
+
+/* ===== الحالة ===== */
+let menu = DEFAULT_MENU, orders = [], closed = false;
+let me = ls.get("fatar_name", "");
+let cart = {}, note = "", cartLoaded = false, sent = false;
+let tab = "order", admin = false, flash = "";
+const cartCount = () => Object.values(cart).reduce((a,b) => a+b, 0);
+const nameOf = id => (menu.find(m => m.id === id) || {name:"صنف محذوف"}).name;
+
+store.onMenu(m => { menu = m; render(); });
+store.onClosed(c => { closed = c; render(); });
+store.onOrders(o => {
+  orders = o;
+  const mine = o.find(x => x.name === me);
+  if (mine && !cartLoaded) { cart = {...mine.items}; note = mine.note || ""; sent = true; cartLoaded = true; }
+  render();
+});
+
+/* ===== الأفعال ===== */
+function login(){
+  const n = $("#nm").value.trim();
+  if (!n) return;
+  me = n; ls.set("fatar_name", me); cartLoaded = false; render();
+}
+function logout(){ me = ""; ls.set("fatar_name", ""); cart = {}; note = ""; cartLoaded = false; sent = false; render(); }
+function change(id, d){
+  cart[id] = Math.max(0, (cart[id] || 0) + d);
+  if (!cart[id]) delete cart[id];
+  sent = false; render();
+}
+function setNote(v){ note = v; sent = false; }
+function send(){
+  if (closed || !cartCount()) return;
+  store.saveOrder({name:me, day:DAY, items:{...cart}, note});
+  sent = true; cartLoaded = true; flash = "تم إرسال طلبك. تقدر تعدّله قبل قفل الطلبات."; render();
+  setTimeout(() => { flash = ""; render(); }, 4000);
+}
+function cancelMine(){ store.delOrder(me); cart = {}; note = ""; sent = false; render(); }
+function unlock(){
+  if ($("#pw").value === CFG.adminPass) { admin = true; flash = ""; }
+  else flash = "كلمة السر غلط";
+  render();
+}
+function addItem(){
+  const name = $("#in").value.trim(), sec = $("#is").value;
+  if (!name) { flash = "اكتب اسم الصنف"; render(); return; }
+  store.saveMenu([...menu, {id:"i"+Date.now(), name, sec}]); flash = ""; $("#in").value = "";
+}
+function delItem(id){ if (confirm("حذف الصنف؟")) store.saveMenu(menu.filter(m => m.id !== id)); }
+function tally(){
+  const t = {};
+  orders.forEach(o => Object.entries(o.items).forEach(([id,q]) => t[id] = (t[id] || 0) + q));
+  return t;
+}
+function copyText(){
+  const t = tally(), parts = [];
+  Object.keys(SEC).forEach(sec => {
+    const its = menu.filter(m => m.sec === sec && t[m.id]);
+    if (its.length) parts.push(SEC[sec] + ":\n" + its.map(m => "- " + m.name + " × " + t[m.id]).join("\n"));
+  });
+  const notes = orders.filter(o => o.note).map(o => "* " + o.name + ": " + o.note);
+  const txt = "طلب الفطار " + DAY + "\n\n" + parts.join("\n\n") + (notes.length ? "\n\nملاحظات:\n" + notes.join("\n") : "");
+  (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(
+    () => { flash = "تم النسخ. الصقه في واتساب."; render(); },
+    () => { prompt("انسخ الطلب:", txt); });
+}
+
+/* ===== العرض ===== */
+function itemRows(sec){
+  return menu.filter(m => m.sec === sec).map(m => {
+    const q = cart[m.id] || 0;
+    return `<div class="row"><b>${esc(m.name)}</b>
+      <div class="step">${q ? `<button onclick="change('${m.id}',-1)" aria-label="أنقص">−</button><span>${q}</span>` : ""}
+      <button class="on" onclick="change('${m.id}',1)" aria-label="زوّد">+</button></div></div>`;
+  }).join("") || `<p class="note">مفيش أصناف في القسم ده.</p>`;
+}
+function viewLogin(){
+  return `<header><h1>فطار الشركة</h1></header>
+  <p class="note">اكتب اسمك علشان طلبك يظهر باسمك عند المسؤول.</p>
+  <input id="nm" placeholder="اسمك" autocomplete="name" onkeydown="if(event.key==='Enter')login()">
+  <div class="gap"></div><button class="btn" onclick="login()">ادخل</button>`;
+}
+function viewOrder(){
+  return `<header><h1>فطار النهارده</h1><span class="date">${esc(me)} · ${DAY}</span></header>
+  ${store.demo ? `<div class="msg err">وضع تجريبي: الطلبات بتتحفظ على الموبايل ده بس. فعّل Firebase علشان تتجمع من كل الموبايلات.</div>` : ""}
+  ${closed ? `<div class="msg err">الطلبات اتقفلت النهارده.</div>` : ""}
+  ${flash ? `<div class="msg">${esc(flash)}</div>` : ""}
+  <h2>${SEC.sand}</h2>${itemRows("sand")}
+  <h2>${SEC.loose}</h2>${itemRows("loose")}
+  <h2>ملاحظات</h2>
+  <textarea rows="2" placeholder="مثال: بدون بصل" oninput="setNote(this.value)">${esc(note)}</textarea>
+  <p class="note"><button class="x" onclick="logout()">مش أنا؟ غيّر الاسم</button></p>`;
+}
+function viewAdmin(){
+  if (!admin) return `<header><h1>المسؤول</h1></header>
+    ${flash ? `<div class="msg err">${esc(flash)}</div>` : ""}
+    <input id="pw" type="password" placeholder="كلمة السر" onkeydown="if(event.key==='Enter')unlock()">
+    <div class="gap"></div><button class="btn" onclick="unlock()">ادخل</button>`;
+  const t = tally();
+  const totals = Object.keys(SEC).map(sec => {
+    const its = menu.filter(m => m.sec === sec && t[m.id]);
+    return its.length ? `<h2>${SEC[sec]}</h2>` + its.map(m => `<div class="sum"><span>${esc(m.name)}</span><b>× ${t[m.id]}</b></div>`).join("") : "";
+  }).join("");
+  return `<header><h1>الإجمالي</h1><span class="date">${orders.length} موظف</span></header>
+  ${flash ? `<div class="msg">${esc(flash)}</div>` : ""}
+  ${totals || `<p class="note">لسه مفيش طلبات.</p>`}
+  <div class="gap"></div>
+  <button class="btn" onclick="copyText()" ${orders.length ? "" : "disabled"}>انسخ الطلب للواتساب</button>
+  <div class="gap"></div>
+  <button class="btn alt" onclick="store.setClosed(${!closed})">${closed ? "افتح الطلبات" : "اقفل الطلبات"}</button>
+  <h2>طلب كل موظف</h2>
+  ${orders.map(o => `<div class="who"><b>${esc(o.name)}</b>
+    <div class="note">${Object.entries(o.items).map(([id,q]) => esc(nameOf(id)) + " × " + q).join("، ")}${o.note ? " — " + esc(o.note) : ""}</div></div>`).join("") || `<p class="note">مفيش حد طلب.</p>`}
+  <h2>إدارة المنيو</h2>
+  ${Object.keys(SEC).map(sec => `<h3 style="margin-top:12px;color:var(--green)">${SEC[sec]}</h3>` +
+    menu.filter(m => m.sec === sec).map(m => `<div class="row"><b>${esc(m.name)}</b><button class="x" onclick="delItem('${m.id}')">حذف</button></div>`).join("")).join("")}
+  <div class="add"><input id="in" placeholder="اسم الصنف الجديد" onkeydown="if(event.key==='Enter')addItem()">
+    <select id="is"><option value="sand">في السندوتشات</option><option value="loose">في الأكل السايب</option></select>
+    <button class="btn alt" onclick="addItem()">أضف</button></div>
+  <p class="note"><button class="x" onclick="admin=false;render()">اقفل لوحة المسؤول</button></p>`;
+}
+function render(){
+  if (!me) { $("#app").innerHTML = viewLogin(); $("#bar").innerHTML = ""; return; }
+  const a = document.activeElement && document.activeElement.id;
+  if (a === "in" || a === "pw") return;
+  $("#app").innerHTML = tab === "order" ? viewOrder() : viewAdmin();
+  const tabs = `<div class="tabs"><button class="${tab==="order"?"on":""}" onclick="tab='order';flash='';render()">طلبي</button>
+    <button class="${tab==="admin"?"on":""}" onclick="tab='admin';flash='';render()">المسؤول</button></div>`;
+  const act = tab === "order" ? `<div class="total">${cartCount()} صنف</div>
+    <button class="btn" onclick="send()" ${closed || !cartCount() ? "disabled" : ""}>${sent ? "تم الإرسال ✓" : "ابعت الطلب"}</button>
+    ${sent ? `<p class="note" style="text-align:center"><button class="x" onclick="cancelMine()">الغي طلبي</button></p>` : ""}` : "";
+  $("#bar").innerHTML = `<div>${act}${tabs}</div>`;
+}
+render();
+
+/* ===== تثبيت كتطبيق (PWA) ===== */
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("sw.js").catch(() => {});
+</script>
+</body>
+</html>
